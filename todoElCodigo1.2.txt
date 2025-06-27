@@ -1,0 +1,411 @@
+import pygame
+import sys
+
+# Configuración básica
+TILE_SIZE = 32
+ANCHO, ALTO = 1340, 670
+
+class Mapa:
+    def __init__(self, mapa_data):
+        self.mapa_data = mapa_data
+        self.tiles = self.cargar_tiles()
+        self.tile_mapping = {
+            0: 'suelo',
+            1: 'pared',
+            3: 'agua',
+            4: None
+        }
+
+    def cargar_tiles(self):
+        try:
+            tile_sheet = pygame.image.load("tileset.png")
+            return {
+                'suelo': tile_sheet.subsurface((0, 0, TILE_SIZE, TILE_SIZE)),
+                'pared': tile_sheet.subsurface((TILE_SIZE, 0, TILE_SIZE, TILE_SIZE)),
+                'agua': tile_sheet.subsurface((0, TILE_SIZE, TILE_SIZE, TILE_SIZE)),
+                'madera': tile_sheet.subsurface((TILE_SIZE, TILE_SIZE, TILE_SIZE, TILE_SIZE))
+            }
+        except:
+            print("Error cargando tileset.png")
+            return {}
+
+    def dibujar(self, pantalla):
+        for y, fila in enumerate(self.mapa_data):
+            for x, tipo_tile in enumerate(fila):
+                tile_type = self.tile_mapping.get(tipo_tile)
+                if tile_type and tile_type in self.tiles:
+                    pantalla.blit(self.tiles[tile_type], (x * TILE_SIZE, y * TILE_SIZE))
+
+    def obtener_tile_en_posicion(self, x, y):
+        tile_x = x // TILE_SIZE
+        tile_y = y // TILE_SIZE
+        if 0 <= tile_y < len(self.mapa_data) and 0 <= tile_x < len(self.mapa_data[0]):
+            return self.mapa_data[tile_y][tile_x]
+        return None
+
+    def verificar_colision(self, rect, solo_suelo=True):
+        """Verifica colisión en todos los lados del rectángulo"""
+        puntos_verificacion = []
+        
+        # Puntos para colisión vertical (suelo/techo)
+        puntos_verificacion.extend([
+            (rect.left + 5, rect.bottom - 1),  # Esquina inferior izquierda
+            (rect.right - 5, rect.bottom - 1), # Esquina inferior derecha
+            (rect.left + 5, rect.top + 1),     # Esquina superior izquierda
+            (rect.right - 5, rect.top + 1)     # Esquina superior derecha
+        ])
+        
+        # Puntos para colisión horizontal (paredes)
+        puntos_verificacion.extend([
+            (rect.left + 1, rect.top + 5),     # Esquina superior izquierda
+            (rect.left + 1, rect.bottom - 5),  # Esquina inferior izquierda
+            (rect.right - 1, rect.top + 5),    # Esquina superior derecha
+            (rect.right - 1, rect.bottom - 5)  # Esquina inferior derecha
+        ])
+        
+        for px, py in puntos_verificacion:
+            tile = self.obtener_tile_en_posicion(px, py)
+            if tile == 0:  # Solo suelo es sólido
+                return True
+            if not solo_suelo and tile in [1, 3]:  # Otros tiles sólidos
+                return True
+        return False
+
+class Personaje:
+    def __init__(self, nombre, imagen_path, imagen_extra_path, tamaño_pie, tamaño_agachado):
+        self.nombre = nombre
+        try:
+            self.imagen = pygame.image.load(imagen_path).convert_alpha()
+            self.imagen_extra = pygame.image.load(imagen_extra_path)
+        except:
+            print(f"Error cargando imágenes para {nombre}")
+            self.imagen = pygame.Surface((tamaño_pie, tamaño_pie), pygame.SRCALPHA)
+            self.imagen_extra = pygame.Surface((400, 400), pygame.SRCALPHA)
+        self.tamaño_pie = tamaño_pie
+        self.tamaño_agachado = tamaño_agachado
+
+    def obtener_imagen(self, agachado=False):
+        tamaño = self.tamaño_agachado if agachado else self.tamaño_pie
+        return pygame.transform.scale(self.imagen, (tamaño, tamaño))
+
+    def obtener_imagen_extra(self):
+        return pygame.transform.scale(self.imagen_extra, (400, 400))
+
+class Juego:
+    def __init__(self):
+        pygame.init()
+        self.pantalla = pygame.display.set_mode((ANCHO, ALTO))
+        pygame.display.set_caption("Amazing FIEE")
+        
+        self.COLORES = {'BLANCO': (255,255,255), 'NEGRO': (0,0,0), 'AMARILLO': (255,255,0)}
+        self.fuente = pygame.font.SysFont('Arial', 40, bold=True)
+        self.fuente_boton = pygame.font.SysFont('Arial', 30)
+        
+        self.mapa = Mapa(self.crear_mapa_data())
+        self.personajes = [
+            Personaje("arturito", "personaje1.png", "arturito_extra.png", 125, 90),
+            Personaje("erquigod", "erquigod.png", "erquigod_extra.png", 125, 100)
+        ]
+        self.seleccion_personaje = 0
+        
+        # Ajustes de física
+        self.gravedad = 0.5
+        self.velocidad_salto = -12
+        self.velocidad_movimiento = 5
+        
+        self.clock = pygame.time.Clock()
+        self.HITBOX_OFFSET_X_NORMAL = 35  # Offset horizontal cuando está de pie
+        self.HITBOX_OFFSET_X_AGACHADO = 10  # Offset horizontal cuando está agachado
+        self.HITBOX_OFFSET_Y = 15  # Offset vertical (compartido)
+
+    def crear_mapa_data(self):
+        return [
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*42,
+            [4]*33 + [0]*9,
+            [0]*33 + [4]*3 + [0]*6
+        ]
+
+    def mostrar_texto(self, texto, y, color='BLANCO', fuente='fuente'):
+        render = getattr(self, fuente).render(texto, True, self.COLORES[color])
+        self.pantalla.blit(render, (ANCHO//2 - render.get_width()//2, y))
+
+    def pantalla_inicio(self):
+        self.pantalla.fill(self.COLORES['NEGRO'])
+        self.mostrar_texto("Bienvenido a Amazing FIEE:", ALTO//4)
+        self.mostrar_texto("Presiona ESPACIO para Iniciar", ALTO//2, fuente='fuente_boton')
+        pygame.display.update()
+        self.esperar_tecla()
+
+    def pantalla_seleccion_personaje(self):
+        self.pantalla.fill(self.COLORES['NEGRO'])
+        self.mostrar_texto("Selecciona tu personaje", 100)
+
+        posiciones = [(ANCHO//4 - 100, ALTO//2 - 100), (3*ANCHO//4 - 100, ALTO//2 - 100)]
+        for i, personaje in enumerate(self.personajes):
+            tamaño = 250 if self.seleccion_personaje == i else 200
+            imagen = pygame.transform.scale(personaje.obtener_imagen(), (tamaño, tamaño))
+            self.pantalla.blit(imagen, posiciones[i])
+            self.mostrar_texto(personaje.nombre.capitalize(), ALTO//2 + 160)
+
+        pygame.display.update()
+
+    def pantalla_personaje_seleccionado(self, personaje_seleccionado):
+        self.pantalla.fill(self.COLORES['NEGRO'])
+        personaje = self.personajes[personaje_seleccionado]
+        
+        try:
+            imagen = personaje.obtener_imagen_extra()
+            self.pantalla.blit(imagen, (ANCHO//2 - imagen.get_width()//2, ALTO//2 - imagen.get_height()//2))
+        except:
+            pass
+
+        self.mostrar_texto(f"Has seleccionado a {personaje.nombre.capitalize()}", ALTO//2 + 200, 'AMARILLO')
+        self.mostrar_texto("Presiona ESPACIO para iniciar el juego", ALTO//2 + 250, 'AMARILLO', 'fuente_boton')
+        pygame.display.update()
+        self.esperar_tecla()
+
+    def esperar_tecla(self, tecla=pygame.K_SPACE):
+        esperando = True
+        while esperando:
+            for evento in pygame.event.get():
+                if evento.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                if evento.type == pygame.KEYDOWN and evento.key == tecla:
+                    esperando = False
+
+    def iniciar_juego(self, personaje_seleccionado):
+        personaje = self.personajes[personaje_seleccionado]
+        tamaño_normal = personaje.tamaño_pie
+        tamaño_agachado = personaje.tamaño_agachado
+        
+        # Estado inicial
+        x = ANCHO // 2 - tamaño_normal // 2
+        y = self.calcular_posicion_inicial(x, 0, tamaño_normal)
+        velocidad_y = 0
+        agachado = False
+        orientacion = "derecha"
+        en_suelo = True
+        
+        # Animación
+        imagenes = self.cargar_animaciones(personaje, tamaño_normal, tamaño_agachado)
+        indice_animacion = 0
+        tiempo_animacion = 0
+        
+        corriendo = True
+        while corriendo:
+            dt = self.clock.tick(60) / 1000.0  # Delta time en segundos
+            
+            for evento in pygame.event.get():
+                if evento.type == pygame.QUIT:
+                    corriendo = False
+            
+            # Determinar el offset horizontal según el estado
+            hitbox_offset_x = self.HITBOX_OFFSET_X_AGACHADO if agachado else self.HITBOX_OFFSET_X_NORMAL
+            
+            # Movimiento
+            teclas = pygame.key.get_pressed()
+            movimiento_x = 0
+            
+            if teclas[pygame.K_a]:
+                movimiento_x = -self.velocidad_movimiento
+                orientacion = "izquierda"
+            if teclas[pygame.K_d]:
+                movimiento_x = self.velocidad_movimiento
+                orientacion = "derecha"
+            
+            # Actualizar posición X con detección de colisiones
+            nueva_x = x + movimiento_x
+            altura_actual = tamaño_agachado if agachado else tamaño_normal
+            
+            # Crear rectángulos para detección de colisiones
+            hitbox_actual = pygame.Rect(
+                x + hitbox_offset_x,
+                y + self.HITBOX_OFFSET_Y,
+                altura_actual - 2*hitbox_offset_x,
+                altura_actual - self.HITBOX_OFFSET_Y
+            )
+            
+            hitbox_nueva = pygame.Rect(
+                nueva_x + hitbox_offset_x,
+                y + self.HITBOX_OFFSET_Y,
+                altura_actual - 2*hitbox_offset_x,
+                altura_actual - self.HITBOX_OFFSET_Y
+            )
+            
+            # Verificar colisión horizontal - versión mejorada sin rebote
+            if movimiento_x != 0:
+                # Primero movemos temporalmente para ver si hay colisión
+                hitbox_temp = hitbox_actual.copy()
+                hitbox_temp.x = nueva_x + hitbox_offset_x
+                
+                if not self.mapa.verificar_colision(hitbox_temp):
+                    x = nueva_x
+                else:
+                    # Ajuste fino para detenerse justo antes del tile
+                    if movimiento_x > 0:  # Moviendo a la derecha
+                        tile_colision = (hitbox_temp.right // TILE_SIZE) * TILE_SIZE
+                        x = tile_colision - (altura_actual - hitbox_offset_x) - 1
+                    else:  # Moviendo a la izquierda
+                        tile_colision = ((hitbox_temp.left // TILE_SIZE) + 1) * TILE_SIZE
+                        x = tile_colision - hitbox_offset_x
+            
+            # Salto
+            if teclas[pygame.K_SPACE] and en_suelo:
+                velocidad_y = self.velocidad_salto
+                en_suelo = False
+            
+            # Agacharse
+            nuevo_agachado = teclas[pygame.K_s]
+            if nuevo_agachado != agachado:
+                agachado = nuevo_agachado
+                if agachado:
+                    y += tamaño_normal - tamaño_agachado
+                else:
+                    # Verificar si hay espacio para pararse
+                    hitbox_parado = pygame.Rect(
+                        x + self.HITBOX_OFFSET_X_NORMAL,  # Usamos el offset normal aquí
+                        y - (tamaño_normal - tamaño_agachado) + self.HITBOX_OFFSET_Y,
+                        tamaño_normal - 2*self.HITBOX_OFFSET_X_NORMAL,
+                        tamaño_normal - self.HITBOX_OFFSET_Y
+                    )
+                    if not self.mapa.verificar_colision(hitbox_parado):
+                        y -= tamaño_normal - tamaño_agachado
+                    else:
+                        agachado = True  # No hay espacio para pararse
+            
+            # Gravedad
+            if not en_suelo:
+                velocidad_y += self.gravedad
+                y += velocidad_y
+            
+            # Actualizar hitbox después del movimiento vertical
+            hitbox_actual.y = y + self.HITBOX_OFFSET_Y
+            
+            # Colisión vertical - versión mejorada sin rebote
+            if self.mapa.verificar_colision(hitbox_actual):
+                if velocidad_y > 0:  # Cayendo
+                    # Ajustar posición exactamente sobre el tile
+                    y = ((hitbox_actual.bottom // TILE_SIZE) * TILE_SIZE - altura_actual)
+                    en_suelo = True
+                elif velocidad_y < 0:  # Chocando con techo
+                    y = ((hitbox_actual.top // TILE_SIZE) + 1) * TILE_SIZE - self.HITBOX_OFFSET_Y
+                velocidad_y = 0
+            else:
+                en_suelo = False
+            
+            # Limites de pantalla
+            x = max(0, min(ANCHO - altura_actual, x))
+            
+            # Reinicio si cae
+            if y > ALTO:
+                x, y = ANCHO//2 - tamaño_normal//2, 0
+                velocidad_y = 0
+            
+            # Animación
+            tiempo_animacion += dt
+            if abs(movimiento_x) > 0 and tiempo_animacion > 0.1:
+                indice_animacion = (indice_animacion + 1) % 2
+                tiempo_animacion = 0
+            
+            # Dibujado
+            self.pantalla.fill(self.COLORES['NEGRO'])
+            self.mapa.dibujar(self.pantalla)
+            
+            # Dibujar personaje
+            if agachado:
+                imagen = imagenes[f'agachado_{orientacion}']
+            else:
+                if abs(movimiento_x) > 0:
+                    imagen = imagenes[orientacion][indice_animacion]
+                else:
+                    imagen = imagenes[orientacion][0]
+            
+            self.pantalla.blit(imagen, (x, y))
+            
+            # Dibujar hitbox (para depuración)
+            pygame.draw.rect(
+                self.pantalla, (255, 0, 0), 
+                (x + hitbox_offset_x, y + self.HITBOX_OFFSET_Y,
+                 altura_actual - 2*hitbox_offset_x, altura_actual - self.HITBOX_OFFSET_Y), 
+                1
+            )
+            
+            pygame.display.flip()
+
+    def cargar_animaciones(self, personaje, tamaño_normal, tamaño_agachado):
+        try:
+            return {
+                'izquierda': [
+                    pygame.transform.scale(pygame.image.load(f"imagenes/{personaje.nombre}_caminar_izquierda_1.png"), (tamaño_normal, tamaño_normal)),
+                    pygame.transform.scale(pygame.image.load(f"imagenes/{personaje.nombre}_caminar_izquierda_2.png"), (tamaño_normal, tamaño_normal))
+                ],
+                'derecha': [
+                    pygame.transform.scale(pygame.image.load(f"imagenes/{personaje.nombre}_caminar_derecha_1.png"), (tamaño_normal, tamaño_normal)),
+                    pygame.transform.scale(pygame.image.load(f"imagenes/{personaje.nombre}_caminar_derecha_2.png"), (tamaño_normal, tamaño_normal))
+                ],
+                'agachado_izquierda': pygame.transform.scale(
+                    pygame.image.load(f"imagenes/{personaje.nombre}_agachado_izquierda.png"), (tamaño_agachado, tamaño_agachado)),
+                'agachado_derecha': pygame.transform.scale(
+                    pygame.image.load(f"imagenes/{personaje.nombre}_agachado_derecha.png"), (tamaño_agachado, tamaño_agachado))
+            }
+        except:
+            print(f"Error cargando animaciones para {personaje.nombre}")
+            animaciones = {}
+            for dir in ['izquierda', 'derecha']:
+                animaciones[dir] = [pygame.Surface((tamaño_normal, tamaño_normal)) for _ in range(2)]
+            for dir in ['agachado_izquierda', 'agachado_derecha']:
+                animaciones[dir] = pygame.Surface((tamaño_agachado, tamaño_agachado))
+            return animaciones
+
+    def calcular_posicion_inicial(self, x, y, tamaño):
+        tile_x = x // TILE_SIZE
+        for tile_y in range(len(self.mapa.mapa_data)):
+            if self.mapa.mapa_data[tile_y][tile_x] == 0:
+                return tile_y * TILE_SIZE - tamaño
+        return ALTO - tamaño
+
+    def juego(self):
+        self.pantalla_inicio()
+        
+        corriendo = True
+        while corriendo:
+            self.pantalla_seleccion_personaje()
+            
+            for evento in pygame.event.get():
+                if evento.type == pygame.QUIT:
+                    corriendo = False
+                elif evento.type == pygame.KEYDOWN:
+                    if evento.key == pygame.K_a:
+                        self.seleccion_personaje = (self.seleccion_personaje - 1) % len(self.personajes)
+                    elif evento.key == pygame.K_d:
+                        self.seleccion_personaje = (self.seleccion_personaje + 1) % len(self.personajes)
+                    elif evento.key == pygame.K_SPACE:
+                        self.pantalla_personaje_seleccionado(self.seleccion_personaje)
+                        self.iniciar_juego(self.seleccion_personaje)
+                        corriendo = False
+
+        pygame.quit()
+        sys.exit()
+
+if __name__ == "__main__":
+    juego = Juego()
+    juego.juego()
