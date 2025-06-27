@@ -13,4 +13,7 @@ Amazing FIEE es un videojuego desarrollado en Python que integra conceptos de ap
 # Link de descarga
 Se recomienda descargar mediante el link subido porque el modelo del codigo esta mejor orgazniado en subcarpetas: https://drive.google.com/drive/u/0/folders/1Y5f5iUku0vu9PFicebytsVaHBsTfuCcm
 - Amazing1.8.rar contiene RL (Reinforcement Learning)
-- Amazing1.7.rar el juego se controla manualmente 
+- Amazing1.7.rar el juego se controla manualmente
+
+# Repositorio
+file:///C:/Users/FIEECS-UNI/Downloads/documentacion%20amazing%20fiee.pdf
