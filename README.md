@@ -16,4 +16,4 @@ Se recomienda descargar mediante el link subido porque el modelo del codigo esta
 - Amazing1.7.rar el juego se controla manualmente
 
 # Repositorio
-file:///C:/Users/FIEECS-UNI/Downloads/documentacion%20amazing%20fiee.pdf
+https://drive.google.com/drive/folders/1ITbjLNoLykh3X9HhluVdeoufChp1hicb
